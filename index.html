@@ -10,7 +10,7 @@
     * { box-sizing: border-box; }
     body { margin: 0; font-family: "Segoe UI", Roboto, Arial, sans-serif;
            background: #eef3f8; color: #1f2a37; }
-    .wrap { max-width: 480px; margin: 40px auto; padding: 0 16px; }
+    .wrap { max-width: 520px; margin: 40px auto; padding: 0 16px; }
     .card { background: #fff; border-radius: 14px; padding: 24px;
             box-shadow: 0 4px 18px rgba(0,0,0,.08); }
     h1 { font-size: 22px; margin: 0 0 4px; color: #0b5cad; text-align: center; }
@@ -20,6 +20,10 @@
             border-radius: 8px; outline: none; background: #fff; }
     select:focus, input:focus { border-color: #0b5cad; }
     select:disabled { background: #f1f5f9; }
+    .tabs { display: flex; gap: 8px; }
+    .tabs button { margin: 0; flex: 1; background: #f1f5f9; color: #1f2a37;
+                   border: 1px solid #cbd5e1; font-weight: 600; }
+    .tabs button.chon { background: #0b5cad; color: #fff; border-color: #0b5cad; }
     button { width: 100%; margin-top: 18px; padding: 12px 18px; font-size: 16px; border: 0;
              border-radius: 8px; background: #0b5cad; color: #fff; cursor: pointer; }
     button:disabled { opacity: .6; cursor: wait; }
@@ -27,11 +31,11 @@
     #kq { margin-top: 20px; }
     .loi { background: #fdecec; color: #b42318; padding: 12px; border-radius: 8px; }
     .info { margin-bottom: 12px; line-height: 1.6; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: center; }
-    th { background: #f1f5f9; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    th, td { border: 1px solid #e2e8f0; padding: 8px 4px; text-align: center; }
+    th { background: #f1f5f9; font-weight: 600; font-size: 14px; }
     td { font-size: 18px; font-weight: 600; }
-    .tb { margin-top: 12px; text-align: center; font-size: 17px; }
+    .tb { margin-top: 6px; text-align: center; font-size: 17px; }
     .tb b { color: #0b5cad; font-size: 22px; }
   </style>
 </head>
@@ -39,10 +43,13 @@
   <div class="wrap">
     <div class="card">
       <h1>TRA CỨU ĐIỂM</h1>
-      <p class="sub">Chọn lớp, chọn tên và nhập mật khẩu để xem điểm</p>
+      <p class="sub">Chọn bảng điểm, lớp, tên và nhập mật khẩu để xem điểm</p>
       <form id="f">
+        <label>Bảng điểm</label>
+        <div class="tabs" id="tabs"><span class="goiy">Đang tải dữ liệu...</span></div>
+
         <label for="lop">Lớp</label>
-        <select id="lop" disabled><option>Đang tải dữ liệu...</option></select>
+        <select id="lop" disabled><option value="">-- Chọn bảng điểm trước --</option></select>
 
         <label for="ten">Họ và tên</label>
         <select id="ten" disabled><option value="">-- Chọn lớp trước --</option></select>
@@ -71,14 +78,13 @@
   // Nhận dạng các cột theo tiêu đề
   var KHOP = {
     ma:  function (h) { return h.indexOf('MADINHDANH') >= 0 || ['MAHS','MASOHS','MAHOCSINH','MASOHOCSINH','MSHS'].indexOf(h) >= 0; },
-    lop: function (h) { return h === 'LOP'; },
+    lop: function (h) { return h === 'LOP'; },                // đúng cột "Lớp" (không lấy "Lớp học")
     ten: function (h) { return h.indexOf('HOVATEN') >= 0 || h.indexOf('HOTEN') >= 0; },
     ns:  function (h) { return h.indexOf('NGAYSINH') >= 0 || h.indexOf('NGAYTHANGNAMSINH') >= 0; },
-    tx1: function (h) { return /TX1$/.test(h); },
-    tx2: function (h) { return /TX2$/.test(h); },
-    tx3: function (h) { return /TX3$/.test(h); },
+    tx:  function (h) { return h === 'DDGTX' || h === 'TX' || h === 'DTX' || h === 'DIEMTX'; },
     gk:  function (h) { return h === 'GK' || /(DDG|DIEM|D)GK$/.test(h) || h.indexOf('GIUAKY') >= 0 || h.indexOf('GIUAHK') >= 0; },
-    ck:  function (h) { return h === 'CK' || /(DDG|DIEM|D)CK$/.test(h) || h.indexOf('CUOIKY') >= 0 || h.indexOf('CUOIHK') >= 0; }
+    ck:  function (h) { return h === 'CK' || /(DDG|DIEM|D)CK$/.test(h) || h.indexOf('CUOIKY') >= 0 || h.indexOf('CUOIHK') >= 0; },
+    tb:  function (h) { return h.indexOf('DTB') === 0; }
   };
 
   // Đổi ngày sinh (dạng ngày của Excel hoặc chữ "05/09/2013") thành các mật khẩu hợp lệ
@@ -96,8 +102,7 @@
       else { d = +p[0]; m = +p[1]; y = +p[2]; if (y < 100) y += (y < 50 ? 2000 : 1900); }
     }
     var dd = ('0' + d).slice(-2), mm = ('0' + m).slice(-2);
-    // Chấp nhận cả 05092013 và 592013
-    return [dd + mm + y, d + '' + m + y, dd + m + y, d + mm + y];
+    return [dd + mm + y, d + '' + m + y, dd + m + y, d + mm + y];   // chấp nhận 05092013 và 592013
   }
 
   function hienSo(v) {
@@ -112,50 +117,99 @@
     return isNaN(n) ? null : n;
   }
 
-  // ===== ĐỌC FILE EXCEL =====
-  var hocSinh = [];   // danh sách {ma, lop, ten, ns, tx1, tx2, tx3, gk, ck}
-
+  // ===== ĐỌC 1 TRANG TÍNH =====
   function docBang(data) {
-    // Tìm dòng tiêu đề (có cột Lớp và Họ tên)
     var hRow = -1;
     for (var r = 0; r < Math.min(15, data.length); r++) {
       var h = data[r].map(chuanHoa);
       if (h.some(KHOP.lop) && h.some(KHOP.ten)) { hRow = r; break; }
     }
-    if (hRow < 0) throw new Error('Không tìm thấy dòng tiêu đề có cột "Lớp" và "Họ và tên".');
+    if (hRow < 0) return null;
 
-    // Tìm vị trí cột (xét cả dòng tiêu đề và dòng ngay dưới, vì có thể gộp ô)
+    var h1 = data[hRow] || [], h2 = data[hRow + 1] || [];
     var idx = {};
     for (var k in KHOP) {
       idx[k] = -1;
-      for (var rr = hRow; rr <= hRow + 1 && rr < data.length && idx[k] < 0; rr++) {
-        for (var c = 0; c < data[rr].length; c++) {
-          if (KHOP[k](chuanHoa(data[rr][c]))) { idx[k] = c; break; }
+      [h1, h2].forEach(function (hr) {
+        if (idx[k] >= 0) return;
+        for (var c = 0; c < hr.length; c++) {
+          if (KHOP[k](chuanHoa(hr[c]))) { idx[k] = c; break; }
         }
+      });
+    }
+
+    // Cột TX: tiêu đề "ĐĐGtx" gộp ô, dòng dưới đánh số 1, 2, 3, 4, 5
+    var txCols = [];
+    if (idx.tx >= 0) {
+      for (var c = idx.tx; c < idx.tx + 10; c++) {
+        var so = chuanHoa(h2[c]);
+        if (/^\d+$/.test(so)) txCols.push({ ten: 'TX' + so, cot: c });
+        else if (c > idx.tx) break;
+      }
+      if (!txCols.length) txCols.push({ ten: 'TX', cot: idx.tx });
+    } else {
+      // Dự phòng: các cột tên TX1, TX2... riêng lẻ
+      for (var c2 = 0; c2 < h1.length; c2++) {
+        var m = chuanHoa(h1[c2]).match(/TX(\d)$/) || chuanHoa(h2[c2]).match(/TX(\d)$/);
+        if (m) txCols.push({ ten: 'TX' + m[1], cot: c2 });
       }
     }
-    if (idx.ns < 0) throw new Error('Không tìm thấy cột "Ngày sinh".');
 
+    var ds = [];
     for (var i = hRow + 1; i < data.length; i++) {
       var row = data[i];
       var lop = String(row[idx.lop] || '').trim();
       var ten = String(row[idx.ten] || '').trim();
       if (!lop || !ten) continue;
       var g = function (k) { return idx[k] >= 0 ? hienSo(row[idx[k]]) : ''; };
-      hocSinh.push({
-        ma: g('ma'), lop: lop, ten: ten, ns: row[idx.ns],
-        tx1: g('tx1'), tx2: g('tx2'), tx3: g('tx3'), gk: g('gk'), ck: g('ck')
+      ds.push({
+        ma: g('ma'), lop: lop, ten: ten, ns: idx.ns >= 0 ? row[idx.ns] : '',
+        tx: txCols.map(function (t) { return hienSo(row[t.cot]); }),
+        gk: g('gk'), ck: g('ck'), tb: g('tb')
       });
     }
+
+    // Chỉ hiện các cột TX đã có ít nhất 1 điểm trong bảng
+    var txHien = [];
+    txCols.forEach(function (t, j) {
+      if (ds.some(function (hs) { return hs.tx[j] !== ''; })) txHien.push(j);
+    });
+    if (!txHien.length && txCols.length) txHien = [0];
+
+    return { ds: ds, txCols: txCols, txHien: txHien };
   }
 
-  var selLop = document.getElementById('lop'), selTen = document.getElementById('ten'),
+  // ===== GIAO DIỆN =====
+  var bang = {};     // { 'MSC': {...}, 'HSC': {...} }
+  var bangChon = null;
+  var tabsBox = document.getElementById('tabs'),
+      selLop = document.getElementById('lop'), selTen = document.getElementById('ten'),
       inpMk = document.getElementById('mk'), btn = document.getElementById('btn'),
       kqBox = document.getElementById('kq');
 
   function themOption(sel, value, text) {
     var o = document.createElement('option');
     o.value = value; o.textContent = text; sel.appendChild(o);
+  }
+
+  function chonBang(ten) {
+    bangChon = ten;
+    Array.prototype.forEach.call(tabsBox.children, function (b) {
+      b.className = (b.textContent === ten) ? 'chon' : '';
+    });
+    kqBox.innerHTML = '';
+    var dsLop = [];
+    bang[ten].ds.forEach(function (hs) { if (dsLop.indexOf(hs.lop) < 0) dsLop.push(hs.lop); });
+    dsLop.sort(function (a, b) { return a.localeCompare(b, 'vi', { numeric: true }); });
+
+    selLop.innerHTML = '';
+    themOption(selLop, '', '-- Chọn lớp --');
+    dsLop.forEach(function (l) { themOption(selLop, l, l); });
+    selLop.disabled = false;
+    selTen.innerHTML = '';
+    themOption(selTen, '', '-- Chọn lớp trước --');
+    selTen.disabled = true;
+    btn.disabled = false;
   }
 
   fetch(TEN_FILE + '?v=' + Date.now(), { cache: 'no-store' })
@@ -165,22 +219,23 @@
     })
     .then(function (buf) {
       var wb = XLSX.read(buf, { type: 'array' });
-      var ws = wb.Sheets[wb.SheetNames[0]];   // trang tính đầu tiên
-      docBang(XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }));
-
-      var dsLop = [];
-      hocSinh.forEach(function (hs) { if (dsLop.indexOf(hs.lop) < 0) dsLop.push(hs.lop); });
-      dsLop.sort(function (a, b) { return a.localeCompare(b, 'vi', { numeric: true }); });
-
-      selLop.innerHTML = '';
-      themOption(selLop, '', '-- Chọn lớp --');
-      dsLop.forEach(function (l) { themOption(selLop, l, l); });
-      selLop.disabled = false;
-      btn.disabled = false;
+      tabsBox.innerHTML = '';
+      wb.SheetNames.forEach(function (tenTab) {
+        var data = XLSX.utils.sheet_to_json(wb.Sheets[tenTab], { header: 1, raw: true, defval: '' });
+        var kq = docBang(data);
+        if (!kq || !kq.ds.length) return;           // bỏ qua tab không phải bảng điểm
+        bang[tenTab] = kq;
+        var b = document.createElement('button');
+        b.type = 'button'; b.textContent = tenTab;
+        b.addEventListener('click', function () { chonBang(tenTab); });
+        tabsBox.appendChild(b);
+      });
+      var ten = Object.keys(bang);
+      if (!ten.length) throw new Error('Không tìm thấy bảng điểm có cột "Lớp" và "Họ và tên".');
+      if (ten.length === 1) chonBang(ten[0]);
     })
     .catch(function (e) {
-      selLop.innerHTML = '';
-      themOption(selLop, '', 'Lỗi tải dữ liệu');
+      tabsBox.innerHTML = '';
       hien({ loi: 'Chưa tải được bảng điểm. ' + e.message });
     });
 
@@ -192,7 +247,7 @@
       selTen.disabled = true; return;
     }
     themOption(selTen, '', '-- Chọn tên --');
-    hocSinh.forEach(function (hs, i) {
+    bang[bangChon].ds.forEach(function (hs, i) {
       if (hs.lop === selLop.value) themOption(selTen, i, hs.ten);
     });
     selTen.disabled = false;
@@ -206,30 +261,41 @@
     return e;
   }
 
-  function hien(d) {
-    kqBox.innerHTML = '';
-    if (d.loi) { kqBox.appendChild(el('div', d.loi, 'loi')); return; }
-
-    var info = el('div', null, 'info');
-    info.appendChild(el('div', 'Họ tên: ' + d.ten));
-    info.appendChild(el('div', 'Lớp: ' + d.lop + (d.ma ? '   –   Mã định danh: ' + d.ma : '')));
-    kqBox.appendChild(info);
-
-    var cot = [['TX1', d.tx1], ['TX2', d.tx2], ['TX3', d.tx3], ['GK', d.gk], ['CK', d.ck]];
+  function bangDiem(cot) {
     var t = el('table'), r1 = el('tr'), r2 = el('tr');
     cot.forEach(function (c) {
       r1.appendChild(el('th', c[0]));
       r2.appendChild(el('td', c[1] === '' ? '–' : c[1]));
     });
     t.appendChild(r1); t.appendChild(r2);
-    kqBox.appendChild(t);
+    return t;
+  }
 
-    // ĐTB môn học kì = (Tổng TX + 2×GK + 3×CK) / (số cột TX + 5)
-    var tx = [d.tx1, d.tx2, d.tx3].map(soDiem).filter(function (x) { return x !== null; });
-    var gk = soDiem(d.gk), ck = soDiem(d.ck);
-    if (tx.length > 0 && gk !== null && ck !== null) {
-      var tong = tx.reduce(function (a, b) { return a + b; }, 0) + 2 * gk + 3 * ck;
-      var tbVal = (Math.round(tong / (tx.length + 5) * 10) / 10).toFixed(1).replace('.', ',');
+  function hien(d, b) {
+    kqBox.innerHTML = '';
+    if (d.loi) { kqBox.appendChild(el('div', d.loi, 'loi')); return; }
+
+    var info = el('div', null, 'info');
+    info.appendChild(el('div', 'Họ tên: ' + d.ten));
+    info.appendChild(el('div', 'Lớp: ' + d.lop));
+    if (d.ma) info.appendChild(el('div', 'Mã định danh: ' + d.ma));
+    kqBox.appendChild(info);
+
+    var cotTx = b.txHien.map(function (j) { return [b.txCols[j].ten, d.tx[j]]; });
+    if (cotTx.length) kqBox.appendChild(bangDiem(cotTx));
+    kqBox.appendChild(bangDiem([['Giữa kỳ', d.gk], ['Cuối kỳ', d.ck]]));
+
+    // Lấy ĐTB trong file; nếu file chưa có thì tự tính (Tổng TX + 2×GK + 3×CK) / (số TX + 5)
+    var tbVal = d.tb;
+    if (!tbVal) {
+      var tx = d.tx.map(soDiem).filter(function (x) { return x !== null; });
+      var gk = soDiem(d.gk), ck = soDiem(d.ck);
+      if (tx.length > 0 && gk !== null && ck !== null) {
+        var tong = tx.reduce(function (a, c) { return a + c; }, 0) + 2 * gk + 3 * ck;
+        tbVal = (Math.round(tong / (tx.length + 5) * 10) / 10).toFixed(1).replace('.', ',');
+      }
+    }
+    if (tbVal) {
       var tb = el('div', 'Điểm trung bình môn: ', 'tb');
       tb.appendChild(el('b', tbVal));
       kqBox.appendChild(tb);
@@ -238,16 +304,18 @@
 
   document.getElementById('f').addEventListener('submit', function (e) {
     e.preventDefault();
+    if (!bangChon) return hien({ loi: 'Em hãy chọn bảng điểm.' });
     if (!selLop.value) return hien({ loi: 'Em hãy chọn lớp.' });
     if (selTen.value === '') return hien({ loi: 'Em hãy chọn họ tên.' });
     var mk = inpMk.value.replace(/\D/g, '');
     if (!mk) return hien({ loi: 'Em hãy nhập mật khẩu (ngày tháng năm sinh).' });
 
-    var hs = hocSinh[+selTen.value];
+    var b = bang[bangChon];
+    var hs = b.ds[+selTen.value];
     if (matKhauHopLe(hs.ns).indexOf(mk) < 0) {
       return hien({ loi: 'Mật khẩu không đúng. Nhập ngày sinh viết liền, VD: 05092013.' });
     }
-    hien(hs);
+    hien(hs, b);
   });
 </script>
 </body>
