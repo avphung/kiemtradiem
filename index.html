@@ -67,6 +67,10 @@
 <script>
   // ===== CẤU HÌNH =====
   var TEN_FILE = 'bangdiem.xlsx';   // tên file Excel trên GitHub (cùng thư mục với index.html)
+  var OWNER = 'avphung', REPO = 'kiemtradiem';
+
+  // Số cột TX hiển thị cho từng tab (theo tên tab). Tab không có trong danh sách: tự động.
+  var SO_TX = { 'MSC': 2, 'HSC': 3 };
 
   // Bỏ dấu, bỏ ký tự đặc biệt, viết hoa: "Mã định danh Bộ GD&ĐT" -> "MADINHDANHBOGDDT"
   function chuanHoa(s) {
@@ -212,11 +216,23 @@
     btn.disabled = false;
   }
 
-  fetch(TEN_FILE + '?v=' + Date.now(), { cache: 'no-store' })
-    .then(function (r) {
-      if (!r.ok) throw new Error('Không tải được file ' + TEN_FILE);
-      return r.arrayBuffer();
-    })
+  // Lấy file mới nhất trực tiếp từ kho GitHub (cập nhật tức thì).
+  // Nếu GitHub từ chối (quá nhiều lượt truy cập trong 1 giờ) thì lấy bản trên GitHub Pages.
+  function taiFile() {
+    var api = 'https://api.github.com/repos/' + OWNER + '/' + REPO + '/contents/' + TEN_FILE +
+              '?ref=main&t=' + Date.now();
+    return fetch(api, { headers: { 'Accept': 'application/vnd.github.raw' }, cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw r.status; return r.arrayBuffer(); })
+      .catch(function () {
+        return fetch(TEN_FILE + '?v=' + Date.now(), { cache: 'no-store' })
+          .then(function (r) {
+            if (!r.ok) throw new Error('Không tải được file ' + TEN_FILE);
+            return r.arrayBuffer();
+          });
+      });
+  }
+
+  taiFile()
     .then(function (buf) {
       var wb = XLSX.read(buf, { type: 'array' });
       tabsBox.innerHTML = '';
@@ -224,6 +240,13 @@
         var data = XLSX.utils.sheet_to_json(wb.Sheets[tenTab], { header: 1, raw: true, defval: '' });
         var kq = docBang(data);
         if (!kq || !kq.ds.length) return;           // bỏ qua tab không phải bảng điểm
+        for (var key in SO_TX) {
+          if (chuanHoa(tenTab).indexOf(chuanHoa(key)) >= 0) {
+            kq.txHien = [];
+            for (var j = 0; j < Math.min(SO_TX[key], kq.txCols.length); j++) kq.txHien.push(j);
+            break;
+          }
+        }
         bang[tenTab] = kq;
         var b = document.createElement('button');
         b.type = 'button'; b.textContent = tenTab;
@@ -282,8 +305,7 @@
     kqBox.appendChild(info);
 
     var cotTx = b.txHien.map(function (j) { return [b.txCols[j].ten, d.tx[j]]; });
-    if (cotTx.length) kqBox.appendChild(bangDiem(cotTx));
-    kqBox.appendChild(bangDiem([['Giữa kỳ', d.gk], ['Cuối kỳ', d.ck]]));
+    kqBox.appendChild(bangDiem(cotTx.concat([['GK', d.gk], ['CK', d.ck]])));
 
     // Lấy ĐTB trong file; nếu file chưa có thì tự tính (Tổng TX + 2×GK + 3×CK) / (số TX + 5)
     var tbVal = d.tb;
