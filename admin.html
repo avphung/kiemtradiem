@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Cập nhật bảng điểm</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", Roboto, Arial, sans-serif;
+           background: #eef3f8; color: #1f2a37; }
+    .wrap { max-width: 560px; margin: 40px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 14px; padding: 24px;
+            box-shadow: 0 4px 18px rgba(0,0,0,.08); margin-bottom: 16px; }
+    h1 { font-size: 22px; margin: 0 0 4px; color: #0b5cad; text-align: center; }
+    .sub { text-align: center; color: #6b7280; margin: 0 0 16px; font-size: 14px; }
+    label { display: block; font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+    input[type=password] { width: 100%; padding: 12px; font-size: 15px;
+            border: 1px solid #cbd5e1; border-radius: 8px; }
+    .nho { font-size: 14px; margin-top: 8px; display: flex; gap: 6px; align-items: center; font-weight: 400; }
+    #drop { border: 2px dashed #94a3b8; border-radius: 12px; padding: 36px 16px;
+            text-align: center; cursor: pointer; color: #475569; transition: .15s; }
+    #drop.hover { border-color: #0b5cad; background: #eff6ff; color: #0b5cad; }
+    #drop b { font-size: 17px; display: block; margin-bottom: 6px; }
+    button { width: 100%; margin-top: 16px; padding: 13px; font-size: 16px; border: 0;
+             border-radius: 8px; background: #0b5cad; color: #fff; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .tt { margin-top: 14px; padding: 12px; border-radius: 8px; font-size: 14px; line-height: 1.6; display: none; }
+    .tt.ok { display: block; background: #ecfdf3; color: #067647; }
+    .tt.loi { display: block; background: #fdecec; color: #b42318; }
+    .tt.info { display: block; background: #f1f5f9; color: #1f2a37; }
+    a { color: #0b5cad; }
+    .doi { font-size: 13px; color: #6b7280; text-align: right; margin-top: 6px; }
+    .doi a { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>CẬP NHẬT BẢNG ĐIỂM</h1>
+      <p class="sub">Kéo file Excel mới vào đây để thay file bảng điểm trên trang tra cứu</p>
+
+      <div id="khungToken">
+        <label for="token">Mã truy cập GitHub (token)</label>
+        <input id="token" type="password" placeholder="github_pat_..." autocomplete="off">
+        <label class="nho"><input type="checkbox" id="nhoToken" checked> Ghi nhớ trên máy tính này</label>
+      </div>
+      <div class="doi" id="daLuu" style="display:none">Đã lưu mã truy cập. <a id="doiToken">Đổi mã</a></div>
+    </div>
+
+    <div class="card">
+      <div id="drop">
+        <b>📂 Kéo thả file Excel vào đây</b>
+        hoặc bấm để chọn file (.xlsx)
+      </div>
+      <input id="file" type="file" accept=".xlsx" hidden>
+      <div id="kiemTra" class="tt"></div>
+      <button id="btn" disabled>Tải lên và thay file cũ</button>
+      <div id="ketQua" class="tt"></div>
+    </div>
+  </div>
+
+<script>
+  // ===== CẤU HÌNH =====
+  var OWNER  = 'avphung';
+  var REPO   = 'kiemtradiem';
+  var PATH   = 'bangdiem.xlsx';   // file trên GitHub sẽ bị thay (dù file kéo vào tên gì)
+  var BRANCH = 'main';
+  var TAB_CAN_CO = ['MSC', 'HSC']; // các tab cần có trong file
+
+  var KEY = 'kiemtradiem_token';
+  var inpToken = document.getElementById('token'), chkNho = document.getElementById('nhoToken'),
+      drop = document.getElementById('drop'), inpFile = document.getElementById('file'),
+      btn = document.getElementById('btn'), boxKT = document.getElementById('kiemTra'),
+      boxKQ = document.getElementById('ketQua');
+  var fileChon = null;
+
+  function luuDoc(k, v) {
+    try { if (v === undefined) return localStorage.getItem(k);
+          if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {}
+    return null;
+  }
+  function thongBao(box, loai, html) { box.className = 'tt ' + loai; box.innerHTML = html; }
+  function an(box) { box.className = 'tt'; box.innerHTML = ''; }
+  function escapeHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  // Token đã lưu
+  var tokenLuu = luuDoc(KEY);
+  if (tokenLuu) {
+    inpToken.value = tokenLuu;
+    document.getElementById('khungToken').style.display = 'none';
+    document.getElementById('daLuu').style.display = 'block';
+  }
+  document.getElementById('doiToken').onclick = function () {
+    luuDoc(KEY, null); inpToken.value = '';
+    document.getElementById('khungToken').style.display = 'block';
+    document.getElementById('daLuu').style.display = 'none';
+    inpToken.focus();
+  };
+
+  // Kéo thả / chọn file
+  drop.onclick = function () { inpFile.click(); };
+  inpFile.onchange = function () { if (inpFile.files[0]) nhanFile(inpFile.files[0]); };
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('hover'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('hover'); });
+  });
+  drop.addEventListener('drop', function (e) {
+    if (e.dataTransfer.files[0]) nhanFile(e.dataTransfer.files[0]);
+  });
+
+  function nhanFile(f) {
+    fileChon = null; btn.disabled = true; an(boxKQ);
+    if (!/\.xlsx$/i.test(f.name)) return thongBao(boxKT, 'loi', 'Chỉ nhận file Excel đuôi <b>.xlsx</b>.');
+    if (/^~\$/.test(f.name)) return thongBao(boxKT, 'loi', 'Đây là file tạm của Excel (~$). Hãy chọn đúng file bảng điểm.');
+
+    f.arrayBuffer().then(function (buf) {
+      var wb;
+      try { wb = XLSX.read(buf, { type: 'array' }); }
+      catch (e) { return thongBao(boxKT, 'loi', 'Không đọc được file. Hãy đóng Excel rồi thử lại.'); }
+
+      var dong = wb.SheetNames.map(function (t) {
+        var n = XLSX.utils.sheet_to_json(wb.Sheets[t], { header: 1, defval: '' })
+                  .filter(function (r) { return r.some(function (c) { return String(c).trim() !== ''; }); }).length;
+        return '• Tab <b>' + escapeHtml(t) + '</b>: ' + n + ' dòng có dữ liệu';
+      });
+      var thieu = TAB_CAN_CO.filter(function (t) { return wb.SheetNames.indexOf(t) < 0; });
+
+      var html = '<b>' + escapeHtml(f.name) + '</b> (' + Math.round(f.size / 1024) + ' KB)<br>' + dong.join('<br>');
+      if (thieu.length) {
+        html += '<br><br>⚠️ Không thấy tab: <b>' + thieu.join(', ') + '</b>. Học sinh sẽ không xem được điểm của tab này. Thầy/cô vẫn có thể tải lên nếu chắc chắn.';
+      }
+      thongBao(boxKT, thieu.length ? 'loi' : 'info', html);
+      fileChon = { ten: f.name, buf: buf };
+      btn.disabled = false;
+    });
+  }
+
+  function sangBase64(buf) {
+    var bytes = new Uint8Array(buf), s = '', CH = 0x8000;
+    for (var i = 0; i < bytes.length; i += CH) {
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    }
+    return btoa(s);
+  }
+
+  function goiAPI(method, url, token, body) {
+    return fetch(url, {
+      method: method,
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+  }
+
+  function loiAPI(status) {
+    if (status === 401) return 'Mã truy cập sai hoặc đã hết hạn. Bấm "Đổi mã" để nhập mã mới.';
+    if (status === 403 || status === 404) return 'Mã truy cập không có quyền ghi vào kho ' + REPO + '. Kiểm tra lại quyền "Contents: Read and write".';
+    if (status === 409 || status === 422) return 'File trên GitHub vừa thay đổi. Bấm tải lên lại một lần nữa.';
+    return 'Lỗi GitHub (mã ' + status + '). Thử lại sau ít phút.';
+  }
+
+  btn.onclick = function () {
+    var token = inpToken.value.trim();
+    if (!token) return thongBao(boxKQ, 'loi', 'Hãy nhập mã truy cập GitHub (token).');
+    if (!fileChon) return;
+
+    btn.disabled = true; btn.textContent = 'Đang tải lên...';
+    thongBao(boxKQ, 'info', 'Đang tải lên GitHub, vui lòng chờ...');
+
+    var url = 'https://api.github.com/repos/' + OWNER + '/' + REPO + '/contents/' + PATH;
+    var bay = new Date(), thoiGian = bay.toLocaleString('vi-VN');
+
+    // 1. Lấy mã (sha) của file cũ để ghi đè
+    goiAPI('GET', url + '?ref=' + BRANCH + '&t=' + Date.now(), token)
+      .then(function (r) {
+        if (r.status === 404) return null;            // chưa có file -> tạo mới
+        if (!r.ok) throw r.status;
+        return r.json().then(function (j) { return j.sha; });
+      })
+      // 2. Tải file mới lên
+      .then(function (sha) {
+        var body = {
+          message: 'Cập nhật bảng điểm ' + thoiGian,
+          content: sangBase64(fileChon.buf),
+          branch: BRANCH
+        };
+        if (sha) body.sha = sha;
+        return goiAPI('PUT', url, token, body);
+      })
+      .then(function (r) {
+        if (!r.ok) throw r.status;
+        if (chkNho.checked) {
+          luuDoc(KEY, token);
+          document.getElementById('khungToken').style.display = 'none';
+          document.getElementById('daLuu').style.display = 'block';
+        }
+        var link = 'https://' + OWNER + '.github.io/' + REPO + '/';
+        thongBao(boxKQ, 'ok',
+          '✅ Đã thay file bảng điểm lúc ' + thoiGian + '.<br>' +
+          'Khoảng 1–2 phút nữa học sinh sẽ thấy điểm mới tại:<br>' +
+          '<a href="' + link + '" target="_blank">' + link + '</a>');
+      })
+      .catch(function (e) {
+        thongBao(boxKQ, 'loi', typeof e === 'number' ? loiAPI(e) : 'Không kết nối được GitHub. Kiểm tra mạng rồi thử lại.');
+      })
+      .then(function () { btn.disabled = !fileChon; btn.textContent = 'Tải lên và thay file cũ'; });
+  };
+</script>
+</body>
+</html>
