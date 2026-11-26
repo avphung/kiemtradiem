@@ -15,13 +15,15 @@
             box-shadow: 0 4px 18px rgba(0,0,0,.08); }
     h1 { font-size: 22px; margin: 0 0 4px; color: #0b5cad; text-align: center; }
     .sub { text-align: center; color: #6b7280; margin: 0 0 20px; font-size: 14px; }
-    form { display: flex; gap: 8px; }
-    input { flex: 1; padding: 12px; font-size: 16px; border: 1px solid #cbd5e1;
-            border-radius: 8px; outline: none; min-width: 0; }
-    input:focus { border-color: #0b5cad; }
-    button { padding: 12px 18px; font-size: 16px; border: 0; border-radius: 8px;
-             background: #0b5cad; color: #fff; cursor: pointer; }
+    label { display: block; font-size: 14px; font-weight: 600; margin: 12px 0 6px; }
+    select, input { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #cbd5e1;
+            border-radius: 8px; outline: none; background: #fff; }
+    select:focus, input:focus { border-color: #0b5cad; }
+    select:disabled { background: #f1f5f9; }
+    button { width: 100%; margin-top: 18px; padding: 12px 18px; font-size: 16px; border: 0;
+             border-radius: 8px; background: #0b5cad; color: #fff; cursor: pointer; }
     button:disabled { opacity: .6; cursor: wait; }
+    .goiy { font-size: 13px; color: #6b7280; margin-top: 4px; }
     #kq { margin-top: 20px; }
     .loi { background: #fdecec; color: #b42318; padding: 12px; border-radius: 8px; }
     .info { margin-bottom: 12px; line-height: 1.6; }
@@ -37,10 +39,19 @@
   <div class="wrap">
     <div class="card">
       <h1>TRA CỨU ĐIỂM</h1>
-      <p class="sub">Nhập mã số học sinh để xem điểm</p>
+      <p class="sub">Chọn lớp, chọn tên và nhập mật khẩu để xem điểm</p>
       <form id="f">
-        <input id="ma" placeholder="Mã số học sinh" autocomplete="off" required>
-        <button id="btn" type="submit">Xem điểm</button>
+        <label for="lop">Lớp</label>
+        <select id="lop" disabled><option>Đang tải dữ liệu...</option></select>
+
+        <label for="ten">Họ và tên</label>
+        <select id="ten" disabled><option value="">-- Chọn lớp trước --</option></select>
+
+        <label for="mk">Mật khẩu (ngày tháng năm sinh)</label>
+        <input id="mk" type="password" inputmode="numeric" autocomplete="off" placeholder="VD: 05092013">
+        <div class="goiy">Viết liền, không dấu: ngày (2 số) + tháng (2 số) + năm (4 số)</div>
+
+        <button id="btn" type="submit" disabled>Xem điểm</button>
       </form>
       <div id="kq"></div>
     </div>
@@ -48,26 +59,52 @@
 
 <script>
   // ===== CẤU HÌNH =====
-  var TEN_FILE = 'diem.xlsx';   // tên file Excel tải lên GitHub (cùng thư mục với index.html)
+  var TEN_FILE = 'bangdiem.xlsx';   // tên file Excel trên GitHub (cùng thư mục với index.html)
 
-  // Các tên cột được chấp nhận (đã bỏ dấu, bỏ khoảng trắng, viết hoa)
-  var COT = {
-    ma:  ['MAHS', 'MASOHS', 'MAHOCSINH', 'MASOHOCSINH', 'MSHS', 'MASO', 'MADINHDANH'],
-    ten: ['HOTEN', 'HOVATEN', 'TEN', 'HOTENHOCSINH'],
-    lop: ['LOP'],
-    tx1: ['TX1', 'DTX1'],
-    tx2: ['TX2', 'DTX2'],
-    tx3: ['TX3', 'DTX3'],
-    gk:  ['GK', 'GIUAKY', 'DGK'],
-    ck:  ['CK', 'CUOIKY', 'DCK']
-  };
-
+  // Bỏ dấu, bỏ ký tự đặc biệt, viết hoa: "Mã định danh Bộ GD&ĐT" -> "MADINHDANHBOGDDT"
   function chuanHoa(s) {
     return String(s == null ? '' : s)
       .normalize('NFD').replace(/[̀-ͯ]/g, '')
       .replace(/[đĐ]/g, 'D').toUpperCase().replace(/[^A-Z0-9]/g, '');
   }
 
+  // Nhận dạng các cột theo tiêu đề
+  var KHOP = {
+    ma:  function (h) { return h.indexOf('MADINHDANH') >= 0 || ['MAHS','MASOHS','MAHOCSINH','MASOHOCSINH','MSHS'].indexOf(h) >= 0; },
+    lop: function (h) { return h === 'LOP'; },
+    ten: function (h) { return h.indexOf('HOVATEN') >= 0 || h.indexOf('HOTEN') >= 0; },
+    ns:  function (h) { return h.indexOf('NGAYSINH') >= 0 || h.indexOf('NGAYTHANGNAMSINH') >= 0; },
+    tx1: function (h) { return /TX1$/.test(h); },
+    tx2: function (h) { return /TX2$/.test(h); },
+    tx3: function (h) { return /TX3$/.test(h); },
+    gk:  function (h) { return h === 'GK' || /(DDG|DIEM|D)GK$/.test(h) || h.indexOf('GIUAKY') >= 0 || h.indexOf('GIUAHK') >= 0; },
+    ck:  function (h) { return h === 'CK' || /(DDG|DIEM|D)CK$/.test(h) || h.indexOf('CUOIKY') >= 0 || h.indexOf('CUOIHK') >= 0; }
+  };
+
+  // Đổi ngày sinh (dạng ngày của Excel hoặc chữ "05/09/2013") thành các mật khẩu hợp lệ
+  function matKhauHopLe(v) {
+    var d, m, y;
+    if (typeof v === 'number') {
+      var dt = new Date(Math.round((v - 25569) * 86400000));
+      d = dt.getUTCDate(); m = dt.getUTCMonth() + 1; y = dt.getUTCFullYear();
+    } else {
+      var p = String(v).match(/\d+/g);
+      if (!p) return [];
+      if (p.length === 1 && p[0].length === 8) return [p[0]];
+      if (p.length < 3) return [];
+      if (p[0].length === 4) { y = +p[0]; m = +p[1]; d = +p[2]; }
+      else { d = +p[0]; m = +p[1]; y = +p[2]; if (y < 100) y += (y < 50 ? 2000 : 1900); }
+    }
+    var dd = ('0' + d).slice(-2), mm = ('0' + m).slice(-2);
+    // Chấp nhận cả 05092013 và 592013
+    return [dd + mm + y, d + '' + m + y, dd + m + y, d + mm + y];
+  }
+
+  function hienSo(v) {
+    if (v === '' || v == null) return '';
+    if (typeof v === 'number') return String(Math.round(v * 100) / 100).replace('.', ',');
+    return String(v).trim();
+  }
   function soDiem(s) {
     s = String(s || '').trim().replace(',', '.');
     if (s === '') return null;
@@ -75,60 +112,93 @@
     return isNaN(n) ? null : n;
   }
 
-  // Tải và đọc file Excel (chỉ tải 1 lần)
-  var duLieu = null;
-  function taiDuLieu() {
-    if (duLieu) return Promise.resolve(duLieu);
-    return fetch(TEN_FILE + '?v=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) {
-        if (!r.ok) throw new Error('Không tải được file ' + TEN_FILE);
-        return r.arrayBuffer();
-      })
-      .then(function (buf) {
-        var wb = XLSX.read(buf, { type: 'array' });
-        var ws = wb.Sheets[wb.SheetNames[0]];   // trang tính đầu tiên
-        duLieu = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
-        return duLieu;
-      });
-  }
+  // ===== ĐỌC FILE EXCEL =====
+  var hocSinh = [];   // danh sách {ma, lop, ten, ns, tx1, tx2, tx3, gk, ck}
 
-  function traCuu(data, maNhap) {
-    var ma = chuanHoa(maNhap);
-    if (!ma) return { loi: 'Vui lòng nhập mã số học sinh.' };
-
-    var hRow = -1, idx = {};
-    for (var r = 0; r < Math.min(10, data.length); r++) {
-      var h = data[r].map(chuanHoa), m = {};
-      for (var k in COT) {
-        m[k] = h.findIndex(function (x) { return COT[k].indexOf(x) >= 0; });
-      }
-      if (m.ma >= 0) { hRow = r; idx = m; break; }
+  function docBang(data) {
+    // Tìm dòng tiêu đề (có cột Lớp và Họ tên)
+    var hRow = -1;
+    for (var r = 0; r < Math.min(15, data.length); r++) {
+      var h = data[r].map(chuanHoa);
+      if (h.some(KHOP.lop) && h.some(KHOP.ten)) { hRow = r; break; }
     }
-    if (hRow < 0) return { loi: 'Không tìm thấy cột "Mã HS" trong bảng điểm. Vui lòng báo giáo viên.' };
+    if (hRow < 0) throw new Error('Không tìm thấy dòng tiêu đề có cột "Lớp" và "Họ và tên".');
+
+    // Tìm vị trí cột (xét cả dòng tiêu đề và dòng ngay dưới, vì có thể gộp ô)
+    var idx = {};
+    for (var k in KHOP) {
+      idx[k] = -1;
+      for (var rr = hRow; rr <= hRow + 1 && rr < data.length && idx[k] < 0; rr++) {
+        for (var c = 0; c < data[rr].length; c++) {
+          if (KHOP[k](chuanHoa(data[rr][c]))) { idx[k] = c; break; }
+        }
+      }
+    }
+    if (idx.ns < 0) throw new Error('Không tìm thấy cột "Ngày sinh".');
 
     for (var i = hRow + 1; i < data.length; i++) {
-      if (chuanHoa(data[i][idx.ma]) !== ma) continue;
       var row = data[i];
-      var g = function (k) { return idx[k] >= 0 ? String(row[idx[k]]).trim() : ''; };
-      var kq = { ma: g('ma'), ten: g('ten'), lop: g('lop'),
-                 tx1: g('tx1'), tx2: g('tx2'), tx3: g('tx3'), gk: g('gk'), ck: g('ck'), tb: '' };
-
-      // ĐTB môn học kì = (Tổng TX + 2×GK + 3×CK) / (số cột TX + 5)
-      var tx = [kq.tx1, kq.tx2, kq.tx3].map(soDiem).filter(function (x) { return x !== null; });
-      var gk = soDiem(kq.gk), ck = soDiem(kq.ck);
-      if (tx.length > 0 && gk !== null && ck !== null) {
-        var tong = tx.reduce(function (a, b) { return a + b; }, 0) + 2 * gk + 3 * ck;
-        kq.tb = (Math.round(tong / (tx.length + 5) * 10) / 10).toFixed(1).replace('.', ',');
-      }
-      return kq;
+      var lop = String(row[idx.lop] || '').trim();
+      var ten = String(row[idx.ten] || '').trim();
+      if (!lop || !ten) continue;
+      var g = function (k) { return idx[k] >= 0 ? hienSo(row[idx[k]]) : ''; };
+      hocSinh.push({
+        ma: g('ma'), lop: lop, ten: ten, ns: row[idx.ns],
+        tx1: g('tx1'), tx2: g('tx2'), tx3: g('tx3'), gk: g('gk'), ck: g('ck')
+      });
     }
-    return { loi: 'Không tìm thấy mã số học sinh "' + String(maNhap).trim() + '". Em kiểm tra lại nhé.' };
   }
 
-  // ===== GIAO DIỆN =====
-  var f = document.getElementById('f'), btn = document.getElementById('btn'),
+  var selLop = document.getElementById('lop'), selTen = document.getElementById('ten'),
+      inpMk = document.getElementById('mk'), btn = document.getElementById('btn'),
       kqBox = document.getElementById('kq');
 
+  function themOption(sel, value, text) {
+    var o = document.createElement('option');
+    o.value = value; o.textContent = text; sel.appendChild(o);
+  }
+
+  fetch(TEN_FILE + '?v=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) {
+      if (!r.ok) throw new Error('Không tải được file ' + TEN_FILE);
+      return r.arrayBuffer();
+    })
+    .then(function (buf) {
+      var wb = XLSX.read(buf, { type: 'array' });
+      var ws = wb.Sheets[wb.SheetNames[0]];   // trang tính đầu tiên
+      docBang(XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }));
+
+      var dsLop = [];
+      hocSinh.forEach(function (hs) { if (dsLop.indexOf(hs.lop) < 0) dsLop.push(hs.lop); });
+      dsLop.sort(function (a, b) { return a.localeCompare(b, 'vi', { numeric: true }); });
+
+      selLop.innerHTML = '';
+      themOption(selLop, '', '-- Chọn lớp --');
+      dsLop.forEach(function (l) { themOption(selLop, l, l); });
+      selLop.disabled = false;
+      btn.disabled = false;
+    })
+    .catch(function (e) {
+      selLop.innerHTML = '';
+      themOption(selLop, '', 'Lỗi tải dữ liệu');
+      hien({ loi: 'Chưa tải được bảng điểm. ' + e.message });
+    });
+
+  selLop.addEventListener('change', function () {
+    selTen.innerHTML = '';
+    kqBox.innerHTML = '';
+    if (!selLop.value) {
+      themOption(selTen, '', '-- Chọn lớp trước --');
+      selTen.disabled = true; return;
+    }
+    themOption(selTen, '', '-- Chọn tên --');
+    hocSinh.forEach(function (hs, i) {
+      if (hs.lop === selLop.value) themOption(selTen, i, hs.ten);
+    });
+    selTen.disabled = false;
+  });
+
+  // ===== HIỂN THỊ KẾT QUẢ =====
   function el(tag, text, cls) {
     var e = document.createElement(tag);
     if (text != null) e.textContent = text;
@@ -137,13 +207,12 @@
   }
 
   function hien(d) {
-    btn.disabled = false; btn.textContent = 'Xem điểm';
     kqBox.innerHTML = '';
     if (d.loi) { kqBox.appendChild(el('div', d.loi, 'loi')); return; }
 
     var info = el('div', null, 'info');
-    info.appendChild(el('div', 'Họ tên: ' + (d.ten || '')));
-    info.appendChild(el('div', 'Lớp: ' + (d.lop || '') + '   –   Mã HS: ' + d.ma));
+    info.appendChild(el('div', 'Họ tên: ' + d.ten));
+    info.appendChild(el('div', 'Lớp: ' + d.lop + (d.ma ? '   –   Mã định danh: ' + d.ma : '')));
     kqBox.appendChild(info);
 
     var cot = [['TX1', d.tx1], ['TX2', d.tx2], ['TX3', d.tx3], ['GK', d.gk], ['CK', d.ck]];
@@ -155,20 +224,30 @@
     t.appendChild(r1); t.appendChild(r2);
     kqBox.appendChild(t);
 
-    if (d.tb) {
+    // ĐTB môn học kì = (Tổng TX + 2×GK + 3×CK) / (số cột TX + 5)
+    var tx = [d.tx1, d.tx2, d.tx3].map(soDiem).filter(function (x) { return x !== null; });
+    var gk = soDiem(d.gk), ck = soDiem(d.ck);
+    if (tx.length > 0 && gk !== null && ck !== null) {
+      var tong = tx.reduce(function (a, b) { return a + b; }, 0) + 2 * gk + 3 * ck;
+      var tbVal = (Math.round(tong / (tx.length + 5) * 10) / 10).toFixed(1).replace('.', ',');
       var tb = el('div', 'Điểm trung bình môn: ', 'tb');
-      tb.appendChild(el('b', d.tb));
+      tb.appendChild(el('b', tbVal));
       kqBox.appendChild(tb);
     }
   }
 
-  f.addEventListener('submit', function (e) {
+  document.getElementById('f').addEventListener('submit', function (e) {
     e.preventDefault();
-    btn.disabled = true; btn.textContent = 'Đang tìm...';
-    var ma = document.getElementById('ma').value;
-    taiDuLieu()
-      .then(function (data) { hien(traCuu(data, ma)); })
-      .catch(function () { hien({ loi: 'Chưa tải được bảng điểm, em thử lại sau nhé.' }); });
+    if (!selLop.value) return hien({ loi: 'Em hãy chọn lớp.' });
+    if (selTen.value === '') return hien({ loi: 'Em hãy chọn họ tên.' });
+    var mk = inpMk.value.replace(/\D/g, '');
+    if (!mk) return hien({ loi: 'Em hãy nhập mật khẩu (ngày tháng năm sinh).' });
+
+    var hs = hocSinh[+selTen.value];
+    if (matKhauHopLe(hs.ns).indexOf(mk) < 0) {
+      return hien({ loi: 'Mật khẩu không đúng. Nhập ngày sinh viết liền, VD: 05092013.' });
+    }
+    hien(hs);
   });
 </script>
 </body>
